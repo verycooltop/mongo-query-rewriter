@@ -32,11 +32,11 @@ describe("parse 模块", () => {
             assert.deepEqual(toFieldConditions({ $regex: "abc" }), [{ op: "$regex", value: "abc" }]);
         });
 
-        it("将未知操作符降级为 $eq 字面量包装", () => {
-            assert.deepEqual(toFieldConditions({ $foo: 1 }), [{ op: "$eq", value: { $foo: 1 } }]);
+        it("未知操作符保真保留 op（不伪装为 $eq）", () => {
+            assert.deepEqual(toFieldConditions({ $foo: 1 }), [{ op: "$foo", value: 1 }]);
             assert.deepEqual(toFieldConditions({ $gt: 1, $foo: 2 }), [
                 { op: "$gt", value: 1 },
-                { op: "$eq", value: { $foo: 2 } },
+                { op: "$foo", value: 2 },
             ]);
         });
 
@@ -224,9 +224,9 @@ describe("parse 模块", () => {
     });
 
     describe("4.7 $elemMatch / $size 等", () => {
-        it("$elemMatch 解析为默认分支", () => {
+        it("$elemMatch 保真透传", () => {
             const conds = toFieldConditions({ $elemMatch: { x: 1 } });
-            assert.ok(conds.some((c) => c.op === "$eq" && c.value && c.value.$elemMatch));
+            assert.deepStrictEqual(conds, [{ op: "$elemMatch", value: { x: 1 } }]);
         });
         it("$size 解析", () => {
             const conds = toFieldConditions({ $size: 3 });

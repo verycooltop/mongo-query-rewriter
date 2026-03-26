@@ -249,7 +249,7 @@ describe("simplify", () => {
             );
         });
 
-        it("4.2 parent $gte:5 child $gt:10 → child 保持更严 $gt:10", () => {
+        it("4.2 parent $gte:5 child $gt:10 → child 保持与父约束一致的 $gt:10（等价）", () => {
             const out = parseAndSimplify({
                 $and: [{ a: { $gte: 5 } }, { a: { $gt: 10 } }],
             });
@@ -261,7 +261,7 @@ describe("simplify", () => {
             assert.ok(gt && gt.value === 10);
         });
 
-        it("4.2 parent $gt:5 child $gte:3 → child 收紧为 $gte:5 或更严", () => {
+        it("4.2 parent $gt:5 child $gte:3 → child 与父取交为 $gte:5（等价）", () => {
             const out = parseAndSimplify({
                 $and: [{ a: { $gt: 5 } }, { a: { $gte: 3 } }],
             });

@@ -54,6 +54,23 @@ describe("core/normalize.ts", () => {
         });
     });
 
+    describe("$nor：单子项 $or 与扁平 $nor 等价，收拢为扁平子句", () => {
+        it("$nor:[$or:[a,b]] 打平为 $nor:[a,b]", () => {
+            const ast = logical("$nor", [
+                logical("$or", [
+                    field("a", [{ op: "$eq", value: 1 }]),
+                    field("b", [{ op: "$eq", value: 2 }]),
+                ]),
+            ]);
+            const out = normalize(ast);
+            assert.strictEqual(out.type, "logical");
+            assert.strictEqual(out.op, "$nor");
+            assert.strictEqual(out.children.length, 2);
+            assert.strictEqual(out.children[0].field, "a");
+            assert.strictEqual(out.children[1].field, "b");
+        });
+    });
+
     describe("3.6 深度嵌套 $and/$and 完全展开", () => {
         it("三层 $and 打平为单层多子节点", () => {
             const ast = logical("$and", [

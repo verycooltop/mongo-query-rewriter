@@ -1,7 +1,7 @@
 {
   "name": "mongo-query-rewriter",
-  "version": "0.1.0",
-  "description": "Normalize and simplify MongoDB query selectors: merge same-field conditions, prune conflicting branches, canonicalize structure. Semantically equivalent or tighter output.",
+  "version": "0.2.0",
+  "description": "Normalize and simplify MongoDB query selectors: merge same-field conditions, detect conflicts (IMPOSSIBLE_SELECTOR), canonicalize structure. Semantically equivalent for modeled operators; passthrough for others.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

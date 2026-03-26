@@ -22,6 +22,15 @@ export interface FalseNode {
     type: "false";
 }
 
+/**
+ * 未在 fieldConditionNormalize 中做区间 / $in 合并的字段操作符（含未知 op）：
+ * parse 保真保留，compile 原样输出；不参与 modeled 推理。
+ */
+export interface PassthroughFieldCondition {
+    op: string;
+    value: unknown;
+}
+
 export type FieldCondition =
     | EqCondition
     | NeCondition
@@ -30,7 +39,8 @@ export type FieldCondition =
     | ExistsCondition
     | RegexCondition
     | AllCondition
-    | SizeCondition;
+    | SizeCondition
+    | PassthroughFieldCondition;
 
 export interface EqCondition {
     op: "$eq";

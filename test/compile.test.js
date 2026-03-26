@@ -140,4 +140,14 @@ describe("operations/compile.ts", () => {
             assert.strictEqual(out.a.$regex, "x");
         });
     });
+
+    describe("5.9 compileFieldConditions 不变量", () => {
+        it("同一 op 重复时抛出（避免静默覆盖）", () => {
+            const ast = field("a", [
+                { op: "$gt", value: 1 },
+                { op: "$gt", value: 2 },
+            ]);
+            assert.throws(() => compileSelector(ast), /duplicate operator/);
+        });
+    });
 });

@@ -3,6 +3,7 @@ import { areValuesEqual } from "./utils";
 
 type Bound = { value: number | Date; inclusive: boolean };
 
+/** 与 `operators.ts` 分层一致：仅这些 op 参与父子 tighten；其余保留在子条件中。 */
 const SUPPORTED_TIGHTEN_OPS = new Set([
     "$eq",
     "$ne",

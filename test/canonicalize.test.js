@@ -53,7 +53,7 @@ describe("core/canonicalize.ts", () => {
             assert.deepStrictEqual(canonicalize(falseNode()), { type: "false" });
         });
 
-        it("$or 节点只递归子节点，不改变 op 与子节点顺序（无 indexSpecs）", () => {
+        it("$or 子节点按稳定结构键排序（析取可交换，canonical 唯一化）", () => {
             const ast = logical("$or", [
                 field("z", [{ op: "$eq", value: 1 }]),
                 field("a", [{ op: "$eq", value: 2 }]),
@@ -62,8 +62,8 @@ describe("core/canonicalize.ts", () => {
             assert.strictEqual(out.type, "logical");
             assert.strictEqual(out.op, "$or");
             assert.strictEqual(out.children.length, 2);
-            assert.strictEqual(out.children[0].field, "z");
-            assert.strictEqual(out.children[1].field, "a");
+            assert.strictEqual(out.children[0].field, "a");
+            assert.strictEqual(out.children[1].field, "z");
         });
     });
 
@@ -96,7 +96,10 @@ describe("core/canonicalize.ts", () => {
         it("logical/true/false 子节点排在 field 之后，稳定", () => {
             const ast = logical("$and", [
                 field("a", [{ op: "$eq", value: 1 }]),
-                logical("$or", [field("x", [{ op: "$eq", value: 0 }])]),
+                logical("$or", [
+                    field("x", [{ op: "$eq", value: 0 }]),
+                    field("y", [{ op: "$eq", value: 1 }]),
+                ]),
                 trueNode(),
             ]);
             const out = canonicalize(ast);

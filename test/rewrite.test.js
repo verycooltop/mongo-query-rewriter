@@ -152,10 +152,8 @@ describe("rewriteQuerySelector", () => {
             // 顶层仍应保留父层条件
             assert.deepEqual(assertAndHasFieldClause(out, "task_type_id").$in, [1, 2]);
 
-            // $or 的第一个分支里 task_type_id 的 $in 仍至少包含 2 和 3（不强行求交）
+            // $or 分支经 canonical 排序；找含 task_type_id.$in 的分支（不假定顺序）
             const orClauses = assertAndHasLogicalClause(out, "$or");
-            const branch0 = orClauses[0];
-            assert.ok(branch0 && typeof branch0 === "object", "($or) 分支应为对象");
 
             function findFieldInBranch(branch, field) {
                 if (branch && typeof branch === "object" && Object.prototype.hasOwnProperty.call(branch, field)) {
@@ -170,7 +168,12 @@ describe("rewriteQuerySelector", () => {
                 return undefined;
             }
 
-            const branchTaskType = findFieldInBranch(branch0, "task_type_id");
+            const branchWithTt = orClauses.find((b) => {
+                const ft = findFieldInBranch(b, "task_type_id");
+                return ft && ft.$in;
+            });
+            assert.ok(branchWithTt && typeof branchWithTt === "object", "应存在含 task_type_id.$in 的 $or 分支");
+            const branchTaskType = findFieldInBranch(branchWithTt, "task_type_id");
             assert.ok(branchTaskType && branchTaskType.$in, "分支应包含 task_type_id.$in");
             assert.ok(
                 Array.isArray(branchTaskType.$in) &&
@@ -191,8 +194,7 @@ describe("rewriteQuerySelector", () => {
             });
 
             const orClauses = assertAndHasLogicalClause(out, "$or");
-            const branch0 = orClauses[0];
-            // 分支可能被编译成 {$and:[{score:{...}},{x:1}]}，这里兼容两种形状
+            // 分支可能被编译成 {$and:[{score:{...}},{x:1}]}；$or 子句顺序经 canonical 排序
             function findField(branch, field) {
                 if (branch && typeof branch === "object" && Object.prototype.hasOwnProperty.call(branch, field)) return branch[field];
                 if (branch && typeof branch === "object" && Array.isArray(branch.$and)) {
@@ -204,7 +206,12 @@ describe("rewriteQuerySelector", () => {
                 return undefined;
             }
 
-            const score = findField(branch0, "score");
+            const branchWithScore = orClauses.find((b) => {
+                const s = findField(b, "score");
+                return s && typeof s === "object";
+            });
+            assert.ok(branchWithScore, "应存在含 score 的 $or 分支");
+            const score = findField(branchWithScore, "score");
             assert.ok(score && typeof score === "object", "分支应包含 score 条件对象");
             // 父层 [0,100] 与子层 (>50) 交集仍为 (>50 且 <=100)，因此应保留/补全上界
             assert.strictEqual(score.$gt, 50);
@@ -217,7 +224,6 @@ describe("rewriteQuerySelector", () => {
             });
 
             const orClauses = assertAndHasLogicalClause(out, "$or");
-            const branch0 = orClauses[0];
             function findField(branch, field) {
                 if (branch && typeof branch === "object" && Object.prototype.hasOwnProperty.call(branch, field)) return branch[field];
                 if (branch && typeof branch === "object" && Array.isArray(branch.$and)) {
@@ -228,7 +234,9 @@ describe("rewriteQuerySelector", () => {
                 }
                 return undefined;
             }
-            const k = findField(branch0, "k");
+            const branchWithK = orClauses.find((b) => findField(b, "k") !== undefined);
+            assert.ok(branchWithK, "应存在含 k 的 $or 分支");
+            const k = findField(branchWithK, "k");
             // 分支上的 k 约束应至少包含 2（可以是字面量 2、$eq:2 或 $in 包含 2）
             assert.ok(k !== undefined, "分支应包含 k 的约束");
             const kIncludes2 =
@@ -578,6 +586,13 @@ describe("rewriteQuerySelector", () => {
         it("$regex 保持", () => {
             const out = rewriteQuerySelector({ name: { $regex: /^test/i } });
             assert.ok(out.name.$regex);
+        });
+
+        it("未建模操作符 $mod / $type 等透传", () => {
+            const q1 = { n: { $mod: [3, 1] } };
+            deepEqualSelector(rewriteQuerySelector(q1), q1);
+            const q2 = { x: { $type: "string" } };
+            deepEqualSelector(rewriteQuerySelector(q2), q2);
         });
     });
 

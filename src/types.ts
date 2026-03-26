@@ -27,6 +27,14 @@ export interface IndexSpec {
 }
 
 /**
+ * `rewriteQuerySelector` / `rewriteAst` 的可选参数。
+ * `indexSpecs` 仅传入 canonicalize：影响 `$and` 下 FieldNode 的**排序**，不改变匹配语义。
+ */
+export interface RewriteOptions {
+    indexSpecs?: IndexSpec[];
+}
+
+/**
  * 某字段条件值标准化后的「操作符-值」对，用于冲突检测与合并比较
  */
 export interface OperatorValuePair {

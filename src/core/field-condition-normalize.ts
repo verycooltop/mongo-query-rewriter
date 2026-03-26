@@ -33,8 +33,8 @@ function unionByValue(arrays: unknown[][]): unknown[] {
 }
 
 /**
- * 单字段条件语义合并：$eq/$gt/$gte/$lt/$lte/$in/$nin/$exists 合并与冲突检测。
- * 冲突时返回 impossible；否则返回合并后的 FieldCondition[]。
+ * 单字段条件语义合并：仅 **modeled** 操作符（见 `operators.isModeledFieldOperator`）参与区间与 $in 合并；
+ * `$ne`、`$regex`、`$size` 及其他 op 进入 `others` 透传，不与此处推理交互。
  */
 export function normalizeFieldConditions(conditions: FieldCondition[]): NormalizeResult {
     if (conditions.length === 0) {
@@ -195,7 +195,14 @@ export function normalizeFieldConditions(conditions: FieldCondition[]): Normaliz
         result.push({ op: "$nin", value: ninSet });
     }
 
-    result.push(...others);
+    // 已写入 result 的 op（如数值化后的 $lte）不再从 others 重复追加，避免 compile 重复键
+    const seenOps = new Set(result.map((c) => c.op));
+    for (const c of others) {
+        if (!seenOps.has(c.op)) {
+            result.push(c);
+            seenOps.add(c.op);
+        }
+    }
     return { conditions: result };
 }
 

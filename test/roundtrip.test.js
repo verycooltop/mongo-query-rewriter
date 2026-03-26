@@ -8,17 +8,14 @@
  */
 const assert = require("node:assert/strict");
 const { rewriteQuerySelector } = require("../dist/index.js");
+const { rewriteAst } = require("../dist/rewrite.js");
 const { parseSelector } = require("../dist/operations/parse.js");
 const { compileSelector } = require("../dist/operations/compile.js");
-const { normalize, predicateMerge, simplify, canonicalize } = require("../dist/core/index.js");
 const { IMPOSSIBLE_SELECTOR } = require("./helpers/assertions.js");
 
 function fullPipeline(selector, indexSpecs) {
     const ast = parseSelector(selector);
-    const normalized = normalize(ast);
-    const merged = predicateMerge(normalized);
-    const simplified = simplify(merged);
-    const canonical = canonicalize(simplified, indexSpecs);
+    const canonical = rewriteAst(ast, indexSpecs ? { indexSpecs } : undefined);
     return compileSelector(canonical);
 }
 

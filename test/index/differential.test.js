@@ -171,5 +171,32 @@ describe("differential: mongodb-memory-server", () => {
             }
         }
     });
+
+    it("未建模字段操作符透传：find 与 find(rewrite) 的 _id 集合一致", async function () {
+        this.timeout(10000);
+        const preservedSelectors = [
+            { tags: { $size: 1 } },
+            { tags: { $all: ["red"] } },
+            { a: { $mod: [2, 0] } },
+            { a: { $type: "number" } },
+        ];
+        for (const selector of preservedSelectors) {
+            const rewritten = rewriteQuerySelector(selector);
+            const resultQuery = await coll.find(selector).toArray();
+            const resultOpt = await coll.find(rewritten).toArray();
+            const toIdSet = (arr) => {
+                const s = new Set();
+                for (let i2 = 0; i2 < arr.length; i2++) {
+                    s.add(String(arr[i2]._id));
+                }
+                return s;
+            };
+            const idsQuery = toIdSet(resultQuery);
+            const idsOpt = toIdSet(resultOpt);
+            if (idsQuery.size !== idsOpt.size || [...idsQuery].some((id) => !idsOpt.has(id))) {
+                assert.fail(`selector = ${JSON.stringify(selector)}, rewritten = ${JSON.stringify(rewritten)}`);
+            }
+        }
+    });
 });
 

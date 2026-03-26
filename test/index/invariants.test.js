@@ -24,6 +24,14 @@ describe("Spec §13 Invariants", () => {
             { a: { $in: [1, 2] }, b: { $nin: [0] } },
             { x: { $exists: false } },
             { $and: [{ a: { $gte: 1 } }, { a: { $lte: 10 } }] },
+            { $nor: [{ a: 1 }, { b: 2 }] },
+            {
+                $and: [
+                    { $nor: [{ $or: [{ a: { $eq: false } }, { b: { $eq: null } }] }, { b: false }] },
+                    { b: "" },
+                    { $or: [{ $nor: [{ a: false }] }, { a: 0 }] },
+                ],
+            },
         ];
 
         idempotentQueries.forEach((query) => {

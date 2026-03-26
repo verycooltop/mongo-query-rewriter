@@ -1,5 +1,7 @@
 import type { IndexSpec } from "../types";
 import type { FieldCondition, FieldNode, LogicalNode, SelectorAST } from "../ast/types";
+import { ASTNodeBuilder } from "../ast/builders";
+import { stableStructuralSortKey } from "./stable-structural-key";
 
 /** Spec §11.4：Condition 规范顺序 */
 const CONDITION_OP_ORDER: Record<string, number> = {
@@ -27,10 +29,11 @@ function sortFieldConditions(conditions: FieldCondition[]): FieldCondition[] {
 }
 
 /**
- * canonicalize（AST → AST）：
- * - Spec §11.1–11.2：$and children 稳定排序（fields 在前，indexSpecs 或字母序）
- * - Spec §11.4：FieldNode.conditions 按规范顺序排序
- * - 结构标准化：$and/$or 打平嵌套、单子节点折叠，保证进入 compile 的 AST 无需再改结构
+ * canonicalize（AST → AST）——**最终形式收口**（无语义推理）：
+ * - FieldNode.conditions 按操作符规范顺序排序
+ * - `$and`：打平同 op 嵌套、单子折叠、子节点排序（含 indexSpecs 时的字段优先级）
+ * - `$or`：打平同 op 嵌套、单子折叠、子节点按稳定结构键排序（析取可交换）
+ * - `$nor`：将 `$nor:[{$or:[...]}]` 收拢为扁平子句列表；子节点按稳定结构键排序
  */
 export function canonicalize(ast: SelectorAST, indexSpecs?: IndexSpec[]): SelectorAST {
     if (ast.type === "true" || ast.type === "false") {
@@ -54,6 +57,29 @@ export function canonicalize(ast: SelectorAST, indexSpecs?: IndexSpec[]): Select
         }
     }
 
+    if (op === "$or") {
+        children = children.flatMap((c) =>
+            c.type === "logical" && c.op === "$or" ? c.children : [c]
+        );
+        if (children.length === 0) {
+            return ASTNodeBuilder.falseNode();
+        }
+        if (children.length === 1) {
+            return children[0];
+        }
+        children = sortLogicalChildrenByStableKey(children);
+    }
+
+    if (op === "$nor") {
+        if (children.length === 1 && children[0].type === "logical" && children[0].op === "$or") {
+            children = children[0].children;
+        }
+        if (children.length === 0) {
+            return ASTNodeBuilder.trueNode();
+        }
+        children = sortLogicalChildrenByStableKey(children);
+    }
+
     let node: LogicalNode = { ...ast, children };
 
     if (node.op === "$and") {
@@ -61,6 +87,10 @@ export function canonicalize(ast: SelectorAST, indexSpecs?: IndexSpec[]): Select
     }
 
     return node;
+}
+
+function sortLogicalChildrenByStableKey(children: SelectorAST[]): SelectorAST[] {
+    return [...children].sort((a, b) => stableStructuralSortKey(a).localeCompare(stableStructuralSortKey(b)));
 }
 
 function sortAndChildren(node: LogicalNode, indexSpecs?: IndexSpec[]): LogicalNode {

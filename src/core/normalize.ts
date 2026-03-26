@@ -14,12 +14,20 @@ export function normalize(ast: SelectorAST): SelectorAST {
     const normalizedChildren = ast.children.map((c) => normalize(c));
 
     // 先同 op 打平
-    const flattened =
+    let flattened: SelectorAST[] =
         ast.op === "$and" || ast.op === "$or"
             ? normalizedChildren.flatMap((c) =>
                   c.type === "logical" && c.op === ast.op ? c.children : [c]
               )
             : normalizedChildren;
+
+    // $nor: 单子项为 $or 时与 Mongo 扁平 $nor:[...] 语义等价；收拢避免 $nor→$or 包装形与扁平形双轨
+    if (ast.op === "$nor" && flattened.length === 1) {
+        const only = flattened[0];
+        if (only.type === "logical" && only.op === "$or") {
+            flattened = only.children;
+        }
+    }
 
     // 移除 empty logical
     if (flattened.length === 0) {

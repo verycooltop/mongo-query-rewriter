@@ -2,22 +2,21 @@ import { ASTNodeBuilder } from "../ast/builders";
 import { isFalseNode, isFieldNode, isLogicalNode, isTrueNode } from "../ast/guards";
 import type { FieldCondition, FieldNode, LogicalNode, SelectorAST } from "../ast/types";
 import {
-    isConditionsImpossible,
-    isParentChildImpossible,
-    tightenWithParent,
-} from "./conflicts-and-tighten";
-import { areValuesEqual } from "./utils";
-
-type FieldConditionMap = Map<string, FieldCondition[]>;
+    buildLayerContext,
+    buildSiblingContext,
+    cloneContext,
+    collectAndLayerFieldConditions,
+    type FieldConditionMap,
+    simplifyFieldAgainstContext,
+} from "./constraint-propagation";
 
 /**
- * simplify（AST → AST）：
- * 原则：顶层/父级条件为最高优先级；所有子分支条件的值都与父级进行匹配、合并、裁剪，确保子分支不与上层冲突。
- * 1. context 记录「所有父级」的 base 条件（base = FieldNode 条件）
- * 2. 在 `$and` 内对子节点做“sibling constraint propagation”：每个子节点看到的是 parent + siblings（不包含 self）
- * 3. 分支冲突剪枝：与 context 冲突的 FieldNode 直接返回 false
- * 4. 收紧时若合并结果等价于父级单值（如 $eq），则只保留单值约束，不输出冗余的 $in
- * 5. 基础逻辑化简：true/false 传播、AND/OR 化简、AND flatten
+ * simplify（AST → AST）编排：
+ *
+ * 1. **约束传播**（`constraint-propagation`）：`$and` 内 sibling context、父级与子级 FieldNode 的
+ *    冲突剪枝与 tighten；tighten 仅作用于 `conditions.ts` 中声明的支持操作符，其余条件原样保留，
+ *    不改变 Mongo 语义。
+ * 2. **逻辑化简**：true/false 传播、AND 吸收 true、OR 吸收 false、AND flatten、$nor 结构化简。
  */
 export function simplify(ast: SelectorAST): SelectorAST {
     const context: FieldConditionMap = new Map();
@@ -30,7 +29,7 @@ function simplifyNode(node: SelectorAST, context: FieldConditionMap): SelectorAS
     }
 
     if (isFieldNode(node)) {
-        return simplifyFieldNode(node, context);
+        return simplifyFieldAgainstContext(node, context);
     }
 
     if (isLogicalNode(node)) {
@@ -47,41 +46,8 @@ function simplifyNode(node: SelectorAST, context: FieldConditionMap): SelectorAS
     return node;
 }
 
-function simplifyFieldNode(node: FieldNode, context: FieldConditionMap): SelectorAST {
-    if (isConditionsImpossible(node.conditions)) {
-        return ASTNodeBuilder.falseNode();
-    }
-
-    const parent = context.get(node.field);
-    if (!parent) {
-        return node;
-    }
-
-    if (isParentChildImpossible(parent, node.conditions)) {
-        return ASTNodeBuilder.falseNode();
-    }
-
-    const tightened = tightenWithParent(parent, node.conditions);
-    if (tightened.impossible) {
-        return ASTNodeBuilder.falseNode();
-    }
-    if (tightened.changed && tightened.conditions.length === 0) {
-        return ASTNodeBuilder.trueNode();
-    }
-    return tightened.changed ? { ...node, conditions: tightened.conditions } : node;
-}
-
 function simplifyAnd(node: LogicalNode, context: FieldConditionMap): SelectorAST {
-    // 预聚合本层所有 FieldNode 条件，用于 sibling 传播
-    const layerAll = new Map<string, FieldCondition[]>();
-    for (const child of node.children) {
-        if (!isFieldNode(child)) {
-            continue;
-        }
-        const existing = layerAll.get(child.field) ?? [];
-        layerAll.set(child.field, [...existing, ...child.conditions]);
-    }
-
+    const layerAll = collectAndLayerFieldConditions(node);
     const resultChildren: SelectorAST[] = [];
 
     for (const child of node.children) {
@@ -145,8 +111,7 @@ function simplifyOr(node: LogicalNode, context: FieldConditionMap): SelectorAST 
 }
 
 /**
- * $nor 子句的双通道化简：用空 context 做结构化简，用父级 context 判断是否可剪枝。
- * 返回保留的子节点列表，以及是否存在恒 true 子句（此时 NOR 恒 false）。
+ * $nor 子句：空 context 做结构化简，父 context 判断是否可剪枝；恒 true 子句使 NOR 为 false。
  */
 function simplifyNorChildrenWithContext(
     children: SelectorAST[],
@@ -164,10 +129,12 @@ function simplifyNorChildrenWithContext(
         if (isFalseNode(childWithCtx)) {
             continue;
         }
-        if (isTrueNode(childNoCtx)) {
+        // 子句在外层 $and 上下文中可化简（如与 sibling 字段矛盾）时必须保留化简结果，不能推入
+        // childNoCtx；否则首轮输出仍含冗余支，再 parse 后 sibling 顺序/合并变化会导致二轮多剪一枝，破坏幂等。
+        if (isTrueNode(childNoCtx) || isTrueNode(childWithCtx)) {
             return { kept: [], hasAlwaysTrue: true };
         }
-        kept.push(childNoCtx);
+        kept.push(childWithCtx);
     }
 
     return { kept, hasAlwaysTrue: false };
@@ -185,62 +152,6 @@ function simplifyNor(node: LogicalNode, context: FieldConditionMap): SelectorAST
     if (kept.length === 1) {
         return ASTNodeBuilder.logical("$nor", [kept[0]]);
     }
-    return ASTNodeBuilder.logical("$nor", [ASTNodeBuilder.logical("$or", kept)]);
-}
-
-function cloneContext(context: FieldConditionMap): FieldConditionMap {
-    const next = new Map<string, FieldCondition[]>();
-    for (const [k, v] of context) {
-        next.set(k, [...v]);
-    }
-    return next;
-}
-
-function addToContext(context: FieldConditionMap, node: FieldNode): void {
-    const existing = context.get(node.field) ?? [];
-    context.set(node.field, [...existing, ...node.conditions]);
-}
-
-function buildLayerContext(parentContext: FieldConditionMap, layerAll: FieldConditionMap): FieldConditionMap {
-    const next = cloneContext(parentContext);
-    for (const [field, conds] of layerAll) {
-        const existing = next.get(field) ?? [];
-        next.set(field, [...existing, ...conds]);
-    }
-    return next;
-}
-
-function buildSiblingContext(
-    parentContext: FieldConditionMap,
-    layerAll: FieldConditionMap,
-    self: FieldNode
-): FieldConditionMap {
-    const next = cloneContext(parentContext);
-    const all = layerAll.get(self.field);
-    if (!all) {
-        return next;
-    }
-
-    const siblingsOnly = subtractConditions(all, self.conditions);
-    if (siblingsOnly.length > 0) {
-        const parentExisting = next.get(self.field) ?? [];
-        next.set(self.field, [...parentExisting, ...siblingsOnly]);
-    }
-    return next;
-}
-
-function subtractConditions(all: FieldCondition[], sub: FieldCondition[]): FieldCondition[] {
-    if (sub.length === 0) {
-        return [...all];
-    }
-    const remaining = [...all];
-
-    for (const s of sub) {
-        const idx = remaining.findIndex((c) => c.op === s.op && areValuesEqual(c.value, s.value));
-        if (idx >= 0) {
-            remaining.splice(idx, 1);
-        }
-    }
-
-    return remaining;
+    // 扁平 $nor 子句列表（与 $nor:[{$or:[...]}] 语义等价）；标准形采用扁平形以利于一步幂等
+    return ASTNodeBuilder.logical("$nor", kept);
 }

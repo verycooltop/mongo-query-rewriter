@@ -50,7 +50,7 @@ export function parseSelector(selector: Selector): SelectorAST {
 
     // field clauses (implicit AND)
     for (const [key, value] of Object.entries(selector)) {
-        // todo 需要给这些安排明白，后续要分析这些操作符
+        // 顶层 $expr / $where 等：本 AST 不建模，跳过（与 README「非目标」一致）
         if (key.startsWith("$")) {
             continue;
         }
@@ -109,7 +109,7 @@ export function toFieldConditions(fieldValue: unknown): FieldCondition[] {
             case "$size": {
                 const n = typeof raw === "number" ? raw : Number(raw);
                 if (!Number.isFinite(n)) {
-                    conditions.push({ op: "$eq", value: { [op]: raw } });
+                    conditions.push({ op: "$size", value: raw });
                     break;
                 }
                 conditions.push({ op: "$size", value: n });
@@ -126,8 +126,8 @@ export function toFieldConditions(fieldValue: unknown): FieldCondition[] {
                 conditions.push({ op: "$regex", value: raw as RegExp | string });
                 break;
             default:
-                // 未显式建模的操作符先按 $eq 退化为字面量比较，避免丢信息
-                conditions.push({ op: "$eq", value: { [op]: raw } });
+                // 未知字段操作符：保真保留 op，禁止伪装成 $eq（会篡改语义）
+                conditions.push({ op, value: raw });
                 break;
         }
     }
