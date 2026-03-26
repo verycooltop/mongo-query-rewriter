@@ -552,6 +552,18 @@ describe("rewriteQuerySelector", () => {
             deepEqualSelector(rewriteQuerySelector({ $comment: "test" }), {});
         });
 
+        it("$all + $size 不应被误判为不可满足", () => {
+            const query = {
+                "properties.renyuan.value": {
+                    $all: ["81541587e1e34d6195a386bf9f812a3a"],
+                    $size: 1,
+                },
+            };
+            const out = rewriteQuerySelector(query);
+            assert.notDeepEqual(out, IMPOSSIBLE_SELECTOR);
+            assert.deepEqual(out, query);
+        });
+
         it("Date 类型范围", () => {
             const d1 = new Date("2020-01-01");
             const d2 = new Date("2021-01-01");

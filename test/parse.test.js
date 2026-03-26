@@ -223,14 +223,14 @@ describe("parse 模块", () => {
         });
     });
 
-    describe("4.7 $elemMatch / $size 等（未建模则退化为 $eq 包装）", () => {
+    describe("4.7 $elemMatch / $size 等", () => {
         it("$elemMatch 解析为默认分支", () => {
             const conds = toFieldConditions({ $elemMatch: { x: 1 } });
             assert.ok(conds.some((c) => c.op === "$eq" && c.value && c.value.$elemMatch));
         });
         it("$size 解析", () => {
             const conds = toFieldConditions({ $size: 3 });
-            assert.ok(conds.some((c) => (c.op === "$eq" && c.value && c.value.$size === 3) || c.op === "$eq"));
+            assert.deepStrictEqual(conds, [{ op: "$size", value: 3 }]);
         });
     });
 

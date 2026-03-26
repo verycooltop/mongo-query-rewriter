@@ -103,6 +103,18 @@ export function toFieldConditions(fieldValue: unknown): FieldCondition[] {
             case "$lte":
                 conditions.push({ op, value: raw as number | Date });
                 break;
+            case "$all":
+                conditions.push({ op: "$all", value: Array.isArray(raw) ? (raw as unknown[]) : [raw] });
+                break;
+            case "$size": {
+                const n = typeof raw === "number" ? raw : Number(raw);
+                if (!Number.isFinite(n)) {
+                    conditions.push({ op: "$eq", value: { [op]: raw } });
+                    break;
+                }
+                conditions.push({ op: "$size", value: n });
+                break;
+            }
             case "$in":
             case "$nin":
                 conditions.push({ op, value: Array.isArray(raw) ? (raw as unknown[]) : [raw] });

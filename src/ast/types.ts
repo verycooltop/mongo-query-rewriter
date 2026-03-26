@@ -28,7 +28,9 @@ export type FieldCondition =
     | CompareCondition
     | InCondition
     | ExistsCondition
-    | RegexCondition;
+    | RegexCondition
+    | AllCondition
+    | SizeCondition;
 
 export interface EqCondition {
     op: "$eq";
@@ -58,4 +60,14 @@ export interface ExistsCondition {
 export interface RegexCondition {
     op: "$regex";
     value: RegExp | string;
+}
+
+export interface AllCondition {
+    op: "$all";
+    value: unknown[];
+}
+
+export interface SizeCondition {
+    op: "$size";
+    value: number;
 }
