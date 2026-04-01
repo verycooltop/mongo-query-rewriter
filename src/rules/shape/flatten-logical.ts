@@ -22,7 +22,7 @@ export function flattenLogicalChildren(node: LogicalNode): QueryNode[] {
 
 export function flattenLogical(node: QueryNode, normalizeContext: NormalizeContext): QueryNode {
     if (!isLogicalNode(node)) {
-        markRuleSkipped(normalizeContext, RULE_ID, "node is not logical");
+        markRuleSkipped(normalizeContext, RULE_ID, "node is not a compound ($and/$or) node");
         return node;
     }
 
@@ -37,6 +37,6 @@ export function flattenLogical(node: QueryNode, normalizeContext: NormalizeConte
         return node.op === "$and" ? andNode(nextChildren) : orNode(nextChildren);
     }
 
-    markRuleSkipped(normalizeContext, RULE_ID, "no nested same-op logical nodes");
+    markRuleSkipped(normalizeContext, RULE_ID, "no nested same-op compound nodes");
     return node;
 }

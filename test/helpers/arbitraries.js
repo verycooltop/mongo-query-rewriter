@@ -472,14 +472,14 @@ function queryAtDepthExtended(d) {
         return leaf;
     }
     const inner = queryAtDepthExtended(d - 1);
-    const logical = fc.oneof(
+    const compoundBranch = fc.oneof(
         fc.array(inner, { minLength: 2, maxLength: 4 }).map((c) => ({ $and: c })),
         fc.array(inner, { minLength: 2, maxLength: 4 }).map((c) => ({ $or: c })),
         fc.array(inner, { minLength: 1, maxLength: 1 }).map((c) => ({ $and: c })),
         fc.array(inner, { minLength: 1, maxLength: 1 }).map((c) => ({ $or: c })),
         inner.map((q) => ({ $and: [{ $and: [q] }] }))
     );
-    return fc.oneof(leaf, logical);
+    return fc.oneof(leaf, compoundBranch);
 }
 
 const queryArbExtended = queryAtDepthExtended(5);

@@ -1,5 +1,9 @@
 export type QueryNode = LogicalNode | FieldNode | TrueNode | FalseNode | OpaqueNode;
 
+/**
+ * Compound query node for `$and` / `$or`.
+ * The `type` discriminant is `"logical"` for stable AST hashing (not a `NormalizeLevel` value).
+ */
 export interface LogicalNode {
     type: "logical";
     op: "$and" | "$or";

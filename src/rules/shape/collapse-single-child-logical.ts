@@ -7,7 +7,7 @@ export const RULE_ID = "shape.collapseSingleChildLogical";
 
 export function collapseSingleChildLogical(node: QueryNode, normalizeContext: NormalizeContext): QueryNode {
     if (!isLogicalNode(node)) {
-        markRuleSkipped(normalizeContext, RULE_ID, "node is not logical");
+        markRuleSkipped(normalizeContext, RULE_ID, "node is not a compound ($and/$or) node");
         return node;
     }
 

@@ -10,6 +10,8 @@ export const DEFAULT_SAFETY: NormalizeSafety = {
 export const DEFAULT_OBSERVE: NormalizeObserve = {
     collectWarnings: true,
     collectMetrics: false,
+    collectPredicateTraces: false,
+    collectScopeTraces: false,
 };
 
 const SORT_RULES: Pick<NormalizeRules, "sortLogicalChildren" | "sortFieldPredicates"> = {
@@ -39,12 +41,9 @@ const PREDICATE_RULES: Pick<
     collapseContradictions: true,
 };
 
-const LOGICAL_EXTRA: Pick<NormalizeRules, "detectCommonPredicatesInOr"> = {
+/** Default extra rules when `level` is `scope` (includes `$or` common-predicate detection). */
+const SCOPE_LEVEL_EXTRA: Pick<NormalizeRules, "detectCommonPredicatesInOr"> = {
     detectCommonPredicatesInOr: true,
-};
-
-const EXPERIMENTAL_EXTRA: Pick<NormalizeRules, "hoistCommonPredicatesFromOr"> = {
-    hoistCommonPredicatesFromOr: true,
 };
 
 function rulesForLevel(level: NormalizeLevel): NormalizeRules {
@@ -55,7 +54,6 @@ function rulesForLevel(level: NormalizeLevel): NormalizeRules {
         collapseContradictions: false,
         ...SORT_RULES,
         detectCommonPredicatesInOr: false,
-        hoistCommonPredicatesFromOr: false,
     };
 
     if (level === "shape") {
@@ -71,24 +69,14 @@ function rulesForLevel(level: NormalizeLevel): NormalizeRules {
         return withPredicate;
     }
 
-    const withLogical: NormalizeRules = {
-        ...withPredicate,
-        ...LOGICAL_EXTRA,
-    };
-
-    if (level === "logical") {
-        return withLogical;
-    }
-
     return {
-        ...withLogical,
-        ...EXPERIMENTAL_EXTRA,
+        ...withPredicate,
+        ...SCOPE_LEVEL_EXTRA,
     };
 }
 
 export const DEFAULT_RULES_BY_LEVEL: Record<NormalizeLevel, NormalizeRules> = {
     shape: rulesForLevel("shape"),
     predicate: rulesForLevel("predicate"),
-    logical: rulesForLevel("logical"),
-    experimental: rulesForLevel("experimental"),
+    scope: rulesForLevel("scope"),
 };

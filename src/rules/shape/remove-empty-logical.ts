@@ -8,12 +8,12 @@ export const RULE_ID = "shape.removeEmptyLogical";
 
 export function removeEmptyLogical(node: QueryNode, normalizeContext: NormalizeContext): QueryNode {
     if (!isLogicalNode(node)) {
-        markRuleSkipped(normalizeContext, RULE_ID, "node is not logical");
+        markRuleSkipped(normalizeContext, RULE_ID, "node is not a compound ($and/$or) node");
         return node;
     }
 
     if (node.children.length > 0) {
-        markRuleSkipped(normalizeContext, RULE_ID, "logical node is not empty");
+        markRuleSkipped(normalizeContext, RULE_ID, "compound node is not empty");
         return node;
     }
 

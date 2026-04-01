@@ -25,7 +25,7 @@ export function uniqueChildrenByHash(children: QueryNode[]): QueryNode[] {
 
 export function dedupeLogicalChildren(node: QueryNode, normalizeContext: NormalizeContext): QueryNode {
     if (!isLogicalNode(node)) {
-        markRuleSkipped(normalizeContext, RULE_ID, "node is not logical");
+        markRuleSkipped(normalizeContext, RULE_ID, "node is not a compound ($and/$or) node");
         return node;
     }
 

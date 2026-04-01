@@ -56,13 +56,13 @@ describe("levels / predicate", () => {
         assert.ok(Array.isArray(predicateQuery.$or));
     });
 
-    it("与 logical 对照：同一 $or 用例下 query 与 predicate 相同（logical 仅多观测）", () => {
+    it("与 scope 对照：同一 $or 用例下 query 与 predicate 相同（scope 仅多观测）", () => {
         const predicateQuery = runAtLevel("predicate", commonPredicatesInOr).query;
-        const logicalQuery = runAtLevel("logical", commonPredicatesInOr).query;
-        assert.deepStrictEqual(logicalQuery, predicateQuery);
+        const scopeQuery = runAtLevel("scope", commonPredicatesInOr).query;
+        assert.deepStrictEqual(scopeQuery, predicateQuery);
         const observe = { collectWarnings: true };
         const pw = runAtLevel("predicate", commonPredicatesInOr, { observe }).meta.warnings.length;
-        const lw = runAtLevel("logical", commonPredicatesInOr, { observe }).meta.warnings.length;
-        assert.ok(lw > pw);
+        const sw = runAtLevel("scope", commonPredicatesInOr, { observe }).meta.warnings.length;
+        assert.ok(sw > pw);
     });
 });
