@@ -26,7 +26,7 @@ describe("levels / shape", () => {
         assert.deepStrictEqual(query, { a: 1 });
     });
 
-    it("$and 下重复 logical 子句去重", () => {
+    it("$and 下重复 compound（$and/$or）子句去重", () => {
         const { query } = runAtLevel("shape", duplicateLogicalChildren);
         assert.deepStrictEqual(query, { a: 1 });
     });
@@ -36,7 +36,7 @@ describe("levels / shape", () => {
         assert.deepStrictEqual(query, { a: 1 });
     });
 
-    it("嵌套 $and 展平为单层 logical", () => {
+    it("嵌套 $and 展平为单层 compound 树", () => {
         const { query } = runAtLevel("shape", nestedAndFlatten);
         assert.deepStrictEqual(query, { $and: [{ a: 1 }, { b: 2 }] });
     });

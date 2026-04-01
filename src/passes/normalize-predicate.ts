@@ -1,10 +1,15 @@
 import { andNode, fieldNode, orNode } from "../ast/builders";
+import { hashPredicate } from "../ast/hash";
 import { isFieldNode, isLogicalNode } from "../ast/guards";
 import type { FieldNode, FieldPredicate, QueryNode } from "../ast/types";
 import type { NormalizeContext } from "../normalize-context";
-import { collapseContradictions } from "../rules/predicate/collapse-contradictions";
-import { dedupeSameFieldPredicates } from "../rules/predicate/dedupe-same-field-predicates";
-import { mergeComparablePredicates } from "../rules/predicate/merge-comparable-predicates";
+import type { PredicateFieldTrace } from "../types";
+import { markRuleApplied, markRuleSkipped } from "../observe/warnings";
+import { buildFieldPredicateBundleFromFieldNode } from "../predicate/ir/build-field-bundle";
+import {
+    compileLocalNormalizeResultToAst,
+    normalizeFieldPredicateBundle,
+} from "../predicate/normalize-field-predicate-bundle";
 
 export function normalizePredicate(node: QueryNode, normalizeContext: NormalizeContext): QueryNode {
     return normalizePredicateRecursive(node, normalizeContext);
@@ -26,9 +31,6 @@ function normalizePredicateRecursive(node: QueryNode, normalizeContext: Normaliz
     return node;
 }
 
-/**
- * 同一 `$and` 层上合并同名字段子句，再跑谓词规则（可检出 `{ $and: [{ a: 1 }, { a: 2 }] }` 等矛盾）。
- */
 function mergeAndSiblingFieldNodesUnderAnd(children: QueryNode[], normalizeContext: NormalizeContext): QueryNode[] {
     const byField = new Map<string, FieldPredicate[]>();
     const rest: QueryNode[] = [];
@@ -50,20 +52,104 @@ function mergeAndSiblingFieldNodesUnderAnd(children: QueryNode[], normalizeConte
     return [...rest, ...merged];
 }
 
+const RULE_DEDUPE = "predicate.dedupeSameFieldPredicates";
+const RULE_MERGE = "predicate.mergeComparablePredicates";
+const RULE_COLLAPSE = "predicate.collapseContradictions";
+
+const MERGE_CAPABILITY_IDS = ["eq.eq", "eq.in", "eq.range", "range.range"];
+
+function fieldPredicatesUnchanged(a: FieldPredicate[], b: FieldPredicate[]): boolean {
+    if (a.length !== b.length) {
+        return false;
+    }
+    return a.every((p, i) => hashPredicate(p) === hashPredicate(b[i]));
+}
+
 function applyPredicateRulesToField(node: FieldNode, normalizeContext: NormalizeContext): QueryNode {
-    let current: QueryNode = node;
+    const rules = normalizeContext.options.rules;
+    const runAny = rules.dedupeSameFieldPredicates || rules.mergeComparablePredicates || rules.collapseContradictions;
 
-    if (normalizeContext.options.rules.dedupeSameFieldPredicates) {
-        current = dedupeSameFieldPredicates(current, normalizeContext);
+    if (!runAny) {
+        markRuleSkipped(normalizeContext, RULE_DEDUPE, "predicate rules disabled");
+        markRuleSkipped(normalizeContext, RULE_MERGE, "predicate rules disabled");
+        markRuleSkipped(normalizeContext, RULE_COLLAPSE, "predicate rules disabled");
+        return node;
     }
 
-    if (isFieldNode(current) && normalizeContext.options.rules.mergeComparablePredicates) {
-        current = mergeComparablePredicates(current, normalizeContext);
+    const bundle = buildFieldPredicateBundleFromFieldNode(node);
+    const local = normalizeFieldPredicateBundle(bundle, {
+        safety: normalizeContext.options.predicate.safetyPolicy,
+        engine: {
+            dedupeAtoms: rules.dedupeSameFieldPredicates,
+            mergeComparable: rules.mergeComparablePredicates,
+            collapseContradictions: rules.collapseContradictions,
+        },
+    });
+
+    const out = compileLocalNormalizeResultToAst(local);
+
+    if (normalizeContext.options.observe.collectPredicateTraces) {
+        const trace: PredicateFieldTrace = {
+            field: node.field,
+            atomKinds: local.atomKinds,
+            appliedCapabilityIds: [...local.appliedCapabilities],
+            skippedCapabilities: local.skippedCapabilities.map((s) => ({
+                id: s.id,
+                reason: s.reason,
+            })),
+            contradiction: local.contradiction,
+            contradictionCapabilityId: local.contradiction ? local.contradictionCapabilityId : undefined,
+            hadCoverage: local.coveredAtoms.length > 0,
+            coverageAtomCount: local.coveredAtoms.length,
+            hadTighten: local.changed && !local.contradiction,
+            impossibleEmitted: local.contradiction,
+        };
+        if (!normalizeContext.predicateTraces) {
+            normalizeContext.predicateTraces = [];
+        }
+        normalizeContext.predicateTraces.push(trace);
     }
 
-    if (isFieldNode(current) && normalizeContext.options.rules.collapseContradictions) {
-        current = collapseContradictions(current, normalizeContext);
+    if (rules.dedupeSameFieldPredicates) {
+        if (local.atomDedupeChanged) {
+            markRuleApplied(normalizeContext, RULE_DEDUPE);
+        } else {
+            markRuleSkipped(normalizeContext, RULE_DEDUPE, "no duplicate predicates");
+        }
+    } else {
+        markRuleSkipped(normalizeContext, RULE_DEDUPE, "rule disabled");
     }
 
-    return current;
+    if (rules.mergeComparablePredicates) {
+        const mergeTouched = local.appliedCapabilities.some((id) => MERGE_CAPABILITY_IDS.includes(id));
+        if (mergeTouched) {
+            markRuleApplied(normalizeContext, RULE_MERGE);
+        } else {
+            markRuleSkipped(normalizeContext, RULE_MERGE, "no comparable predicate merge applied");
+        }
+    } else {
+        markRuleSkipped(normalizeContext, RULE_MERGE, "rule disabled");
+    }
+
+    if (rules.collapseContradictions) {
+        const collapseContradictionCaps = ["eq.ne", "eq.in"];
+        const collapseHit =
+            local.appliedCapabilities.includes("eq.ne") ||
+            (local.contradiction &&
+                local.contradictionCapabilityId !== undefined &&
+                collapseContradictionCaps.includes(local.contradictionCapabilityId));
+        if (collapseHit) {
+            markRuleApplied(normalizeContext, RULE_COLLAPSE);
+        } else {
+            markRuleSkipped(normalizeContext, RULE_COLLAPSE, "no explicit contradiction");
+        }
+    } else {
+        markRuleSkipped(normalizeContext, RULE_COLLAPSE, "rule disabled");
+    }
+
+    if (isFieldNode(out) && out.field === node.field && fieldPredicatesUnchanged(out.predicates, node.predicates)) {
+        return node;
+    }
+
+    return out;
 }

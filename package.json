@@ -1,7 +1,7 @@
 {
   "name": "mongo-query-normalizer",
   "version": "0.1.0",
-  "description": "Observable, level-based normalizer for MongoDB query objects. Defaults to conservative shape stabilization; higher levels are preview surfaces in v0.1.0. Predictable output and metadata—not planner optimization.",
+  "description": "Observable, level-based normalizer for MongoDB query objects. Defaults to conservative shape stabilization; optional predicate and scope levels with documented contracts. Predictable output and metadata—not planner optimization.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -19,7 +19,7 @@
     "test:semantic": "mocha --require ./test/helpers/mocha-semantic-hooks.js \"test/semantic/**/*.test.js\" \"test/regression/**/*.test.js\" \"test/property/**/*.test.js\"",
     "test:semantic:quick": "FC_SEED=42 FC_RUNS=45 mocha --require ./test/helpers/mocha-semantic-hooks.js \"test/semantic/**/*.test.js\" \"test/regression/**/*.test.js\" \"test/property/**/*.test.js\"",
     "test:semantic:ci": "FC_RUNS=200 FC_SEED=42 mocha --require ./test/helpers/mocha-semantic-hooks.js \"test/semantic/**/*.test.js\" \"test/regression/**/*.test.js\" \"test/property/**/*.test.js\"",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm test && npm run build"
   },
   "author": "",
   "license": "ISC",

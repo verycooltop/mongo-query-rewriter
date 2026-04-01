@@ -1,4 +1,10 @@
-import type { NodeStats, ResolvedNormalizeOptions } from "./types";
+import type {
+    NodeStats,
+    PredicateFieldTrace,
+    ResolvedNormalizeOptions,
+    ScopeTraceEvent,
+} from "./types";
+import type { ConstraintExtractionRejection } from "./scope/context/constraint-set";
 
 export interface NormalizeContext {
     options: ResolvedNormalizeOptions;
@@ -12,6 +18,9 @@ export interface NormalizeContext {
     beforeStats?: NodeStats;
     afterStats?: NodeStats;
     depth: number;
+    predicateTraces?: PredicateFieldTrace[];
+    scopeTraceEvents?: ScopeTraceEvent[];
+    scopeConstraintRejections?: ConstraintExtractionRejection[];
 }
 
 export function createNormalizeContext(options: ResolvedNormalizeOptions): NormalizeContext {
@@ -27,5 +36,8 @@ export function createNormalizeContext(options: ResolvedNormalizeOptions): Norma
         beforeStats: undefined,
         afterStats: undefined,
         depth: 0,
+        predicateTraces: undefined,
+        scopeTraceEvents: undefined,
+        scopeConstraintRejections: undefined,
     };
 }

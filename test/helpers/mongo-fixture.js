@@ -9,12 +9,23 @@ const COLL_NAME = "items";
 let server;
 let client;
 
+function resolveSystemMongodPath() {
+    return (
+        process.env.MONGODB_BINARY ||
+        process.env.MONGOD_BINARY ||
+        process.env.MONGOMS_SYSTEM_BINARY ||
+        ""
+    );
+}
+
 /** 启动共享内存 Mongo（由 mocha semantic hooks 调用一次）。 */
 async function startSharedMongo() {
     if (client) {
         return;
     }
-    server = await MongoMemoryServer.create();
+    const systemBinary = resolveSystemMongodPath();
+    const opts = systemBinary ? { binary: { systemBinary } } : {};
+    server = await MongoMemoryServer.create(opts);
     client = new MongoClient(server.getUri());
     await client.connect();
 }

@@ -27,7 +27,7 @@ Contributor note: why **`normalizeQuery(normalizeQuery(q).query)`** should match
 
 **`$and` ordering**
 
-- Field nodes ordered (e.g. by field name); logical nodes after fields with stable tie-break.
+- Field nodes ordered (e.g. by field name); compound (`$and` / `$or`) nodes after fields with stable tie-break.
 
 ## 3. Exceptions / limits
 

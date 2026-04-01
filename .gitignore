@@ -2,4 +2,5 @@ dist
 node_modules
 .cursorrules
 .DS_Store
+**/._.DS_Store
 __MACOSX

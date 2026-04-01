@@ -22,7 +22,7 @@ When the engine proves **unsatisfiability** under modeled rules (at `predicate`+
 normalized(query) = IMPOSSIBLE_SELECTOR
 ```
 
-Current `IMPOSSIBLE_SELECTOR` shape (implementation): `{ $expr: { $eq: [1, 0] } }`.
+Current `IMPOSSIBLE_SELECTOR` shape (implementation): `{ _id: { $exists: false } }` (canonical unsatisfiable filter for normal collections).
 
 ---
 
@@ -40,14 +40,14 @@ For one `normalizeQuery` call:
 
 ```
 parseQuery
-→ normalizeShape
-→ normalizePredicate   (only if level is predicate / logical / experimental)
-→ simplify             (same gating as normalizePredicate)
-→ detect in $or        (logical / experimental, when rule enabled)
-→ hoist from $or       (experimental only, when rule enabled)
+→ (outer rounds) stabilize: normalizeShape / normalizePredicate+simplify / normalizeScope+simplify / canonicalize
+→ compileQuery → parseQuery  (one internal BSON resync so AST matches compiled field grouping; then one more stabilize pass)
+→ detectCommonPredicatesInOr (scope only, optional; observe-only — warnings / traces, no structural rewrite)
 → canonicalize
 → compileQuery
 ```
+
+Inner stabilization uses bounded rounds with optional `meta.warnings` when a phase fails to converge within its round limit.
 
 ---
 
@@ -84,13 +84,23 @@ All `shape` rules plus predicate-oriented rules: dedupe same-field predicates, m
 
 **Special case:** In `normalizePredicate`, direct sibling `FieldNode`s with the **same field name** under `$and` may be **merged** before further predicate normalization, so contradictions such as `{ $and: [{ a: 1 }, { a: 2 }] }` can be detected.
 
-### 6.3 `logical`
+### 6.3 `scope`
 
-`predicate` plus **detection** of common predicates in `$or` (on when rule enabled). **Detection does not imply hoisting** by default.
+`predicate` plus **scope normalization**, whose primary mechanisms are:
 
-### 6.4 `experimental`
+1. **Inherited constraint propagation** — phase-1 allowlisted field constraints from ancestors and `$and` siblings are merged into a per-child `ConstraintSet` when policy allows.
+2. **Conservative branch pruning** — under `allowBranchPruning` and satisfiability analysis against inherited constraints, impossible `$or` branches may compile to the impossible filter; disabled policy preserves branches.
+3. **Coverage elimination** — when `allowConstraintCoverageElimination` holds and inherited metadata is clean, redundant local constraints implied by inherited bounds may be removed (narrow, implementation-tested cases only).
 
-May enable **hoist common predicates from `$or`** when the rule is on. Not intended for unrestricted production defaults.
+**Optional, observe-only:** `rules.detectCommonPredicatesInOr` enables **detection** of common predicates inside `$or` (warnings / optional traces). It is **not** part of the core scope propagation story and **does not** hoist or rewrite query structure.
+
+### 6.4 Scope layer contract (conservative bounds)
+
+- **Inherited allowlist:** Only constraints extracted under the phase-1 rules participate. Typically includes comparable range atoms and `$eq` / `$in` on bundles that are not opaque, array-sensitive, null-sensitive, or path-conflict flagged. Everything else is **rejected for extraction** (recorded in scope meta when tracing) and the subtree is **preserved** in the AST.
+- **Field bundle rejection:** `exists`, `$ne`, `$nin`, opaque fragments, and unsupported compound shapes as sources do not populate inherited sets; sibling merges skip non-extractable parts without widening semantics.
+- **Unsupported inherited metadata:** When `hasUnsupportedSemantics` is set on the merged inherited set, **coverage elimination is skipped** for that site. With `bailoutOnUnsupportedScopeMix`, the implementation may **bail out** rather than apply risky scope rewrites (see §4).
+- **Coverage elimination:** Supported only in **verified narrow cases** (e.g. identical inherited equality covering a redundant local equality on the same field). It does **not** claim general redundancy removal across arbitrary operators.
+- **Branch pruning:** Runs only when branch satisfiability is analyzed as **unsatisfiable** against inherited constraints under the same conservative model; policy off ⇒ **no** pruning. Pruning does not add new predicate merges beyond `predicate` level.
 
 ---
 
@@ -115,7 +125,7 @@ May enable **hoist common predicates from `$or`** when the rule is on. Not inten
 
 - Not a MongoDB **planner** or index optimizer.  
 - Not full coverage of every MongoDB operator.  
-- Not aggressive logical hoisting **by default**.  
+- Not structural hoisting of common `$or` predicates (detection-only at `scope`).
 
 ---
 
@@ -129,4 +139,4 @@ May enable **hoist common predicates from `$or`** when the rule is on. Not inten
 
 ## 11. Testing
 
-Tests should cover: default `shape` level, explicit `predicate` / `logical` / `experimental` behavior, `meta` fields, bailout fallback, and basic idempotency. Differential tests against a real MongoDB deployment are optional but valuable for regression suites.
+Tests should cover: default `shape` level, explicit `predicate` / `scope` behavior (including supported vs opaque preservation), `meta` fields, bailout fallback, and idempotency. Differential tests against a real MongoDB deployment are optional but valuable for regression suites. Semantic suites may use a local `mongod` via `MONGODB_BINARY`, `MONGOD_BINARY`, or `MONGOMS_SYSTEM_BINARY` to avoid downloading a binary.

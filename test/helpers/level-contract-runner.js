@@ -1,7 +1,7 @@
 "use strict";
 
 /** @type {import("../../dist/index.js").NormalizeLevel[]} */
-const LEVELS = ["shape", "predicate", "logical", "experimental"];
+const LEVELS = ["shape", "predicate", "scope"];
 
 /**
  * @param {(level: import("../../dist/index.js").NormalizeLevel) => void} register

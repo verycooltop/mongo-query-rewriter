@@ -2,9 +2,11 @@
 
 [English](README.md) | **中文**
 
-一个面向 **MongoDB 查询对象** 的**分层规范化**工具：强调**稳定、可控、可观测**，而不是激进改写或执行计划优化。
+一个面向 **MongoDB 查询对象** 的 **可观测、分层式** 规范化器。它以保守默认策略稳定查询 **shape**，并提供 **`predicate`** 与 **`scope`** 两个带有**文档化、测试兜底契约**的层级（见 [SPEC.zh-CN.md](SPEC.zh-CN.md) 与 [docs/normalization-matrix.zh-CN.md](docs/normalization-matrix.zh-CN.md)；英文对照见 [SPEC.md](SPEC.md) 与 [docs/normalization-matrix.md](docs/normalization-matrix.md)）。它返回**可预测**的输出与 **metadata**，而不是 MongoDB 查询规划器优化器。
 
-> **v0.1.0 版本边界：** 面向**一般生产流量**，请**只使用 `shape`**——在本版本中，它是我们**唯一**作此用途推荐的 level。其上的 **`predicate`、`logical`、`experimental`** 属于**预览 / 实验向**能力，更适合**离线分析、回放测试、语义校验与定向实验**，不宜无差别地作为全量在线请求的默认策略。
+> **默认策略：** **`shape`** 仅做结构规范化，适合作为**覆盖面最广**的默认路径。 **`predicate`**、**`scope`** 在 **SPEC**、**normalization-matrix** 与 **契约测试** 中有明确边界；仅在需要对应能力且接受「已建模算子」范围时启用；**opaque** 算子保持透传。
+>
+> **`v0.2.0` 起：** `predicate` 改写面有意收敛到显式验证能力（`eq.eq`、`eq.ne`、`eq.in`、`eq.range`、`range.range`）。高风险组合（如 `null`/缺失语义、数组敏感语义、`$exists`/`$nin`、整对象与点路径混用、opaque 混用）按设计保持保守处理。
 
 ---
 
@@ -20,8 +22,8 @@
 
 ## 核心特性
 
-- **按 level 分层**：`shape` → `predicate` → `logical` → `experimental`  
-- **默认保守**：开箱仅 `shape`；在 **v0.1.0** 中，这也是**唯一**建议用于**一般生产环境**的 level  
+- **按 level 分层**：`shape` → `predicate` → `scope`  
+- **默认保守**：开箱仅 `shape`（风险最小的结构层）  
 - **可观测的 `meta`**：变更、规则、告警、哈希、可选统计  
 - **稳定 / 幂等**（相同 options、未熔断时）  
 - **不透明（opaque）回退**：不支持的算子以透传为主，不做完整语义改写  
@@ -51,19 +53,158 @@ console.log(result.meta);
 
 ---
 
+## 完整使用说明
+
+### 1) 最小可用（推荐默认）
+
+```ts
+import { normalizeQuery } from "mongo-query-normalizer";
+
+const { query: normalizedQuery, meta } = normalizeQuery(inputQuery);
+```
+
+- 不传 `options` 时，默认 `level: "shape"`。
+- 适合日志归一化、缓存 key 稳定化、查询 diff 对齐等“低风险结构规范化”场景。
+
+### 2) 显式选择 level
+
+```ts
+normalizeQuery(inputQuery, { level: "shape" }); // 仅结构层（默认）
+normalizeQuery(inputQuery, { level: "predicate" }); // 启用已建模谓词整理
+normalizeQuery(inputQuery, { level: "scope" }); // 启用 scope 传播/保守剪枝能力
+```
+
+- `shape`：结构稳定优先，风险最低。
+- `predicate`：在已建模算子范围内做去重、合并、矛盾折叠。
+- `scope`：在 `predicate` 之上增加继承约束传播与保守分支决策。
+
+### 3) `options` 全量示例
+
+```ts
+import { normalizeQuery } from "mongo-query-normalizer";
+
+const result = normalizeQuery(inputQuery, {
+    level: "scope",
+    rules: {
+        // shape 相关
+        flattenLogical: true,
+        removeEmptyLogical: true,
+        collapseSingleChildLogical: true,
+        dedupeLogicalChildren: true,
+        // predicate 相关
+        dedupeSameFieldPredicates: true,
+        mergeComparablePredicates: true,
+        collapseContradictions: true,
+        // 排序相关
+        sortLogicalChildren: true,
+        sortFieldPredicates: true,
+        // scope 观测规则（仅观测，不上提改写）
+        detectCommonPredicatesInOr: true,
+    },
+    safety: {
+        maxNormalizeDepth: 32,
+        maxNodeGrowthRatio: 1.5,
+    },
+    observe: {
+        collectWarnings: true,
+        collectMetrics: false,
+        collectPredicateTraces: false,
+        collectScopeTraces: false,
+    },
+    predicate: {
+        safetyPolicy: {
+            // 仅覆盖你关心的字段；其余使用默认值
+        },
+    },
+    scope: {
+        safetyPolicy: {
+            // 仅覆盖你关心的字段；其余使用默认值
+        },
+    },
+});
+```
+
+### 4) 用 `resolveNormalizeOptions` 查看最终生效配置
+
+```ts
+import { resolveNormalizeOptions } from "mongo-query-normalizer";
+
+const resolvedOptions = resolveNormalizeOptions({
+    level: "predicate",
+    observe: { collectMetrics: true },
+});
+
+console.log(resolvedOptions);
+```
+
+- 适合排查“某个规则为何启用/未启用”。
+- 适合在服务启动时打印一次“规范化配置快照”。
+
+### 5) 处理返回值（`query` + `meta`）
+
+```ts
+const { query: normalizedQuery, meta } = normalizeQuery(inputQuery, options);
+
+if (meta.bailedOut) {
+    logger.warn({ reason: meta.bailoutReason }, "normalization bailed out");
+}
+
+if (meta.changed) {
+    logger.info(
+        {
+            level: meta.level,
+            beforeHash: meta.beforeHash,
+            afterHash: meta.afterHash,
+            appliedRules: meta.appliedRules,
+        },
+        "query normalized"
+    );
+}
+```
+
+- `query`：规范化后的查询对象。
+- `meta`：观测信息（是否变化、规则轨迹、告警、哈希、可选统计与 trace）。
+
+### 6) 常见接入模式
+
+```ts
+// A. 在数据访问层统一规范化
+export function normalizeForFind(rawFilter) {
+    return normalizeQuery(rawFilter, { level: "shape" }).query;
+}
+
+// B. 需要更多收敛能力的离线路径（如批处理）
+export function normalizeForBatch(rawFilter) {
+    return normalizeQuery(rawFilter, { level: "predicate" }).query;
+}
+```
+
+- 在线主路径优先 `shape`。
+- `predicate` / `scope` 建议在有明确收益与测试兜底时再启用。
+
+### 7) 错误与边界
+
+- `level` 非法会抛错（例如拼写错误）。
+- 不支持或未知算子通常按 opaque 保留，不保证参与语义合并。
+- 本库目标是“稳定与可观测”，不是查询优化器。
+
+---
+
 ## 默认行为说明
 
 - **默认 `level` 为 `shape`**（见 `resolveNormalizeOptions()`）。  
-- 默认**不会**做激进的谓词合并或逻辑上提。  
+- `shape` 默认**不做**谓词级合并。**`scope`** 主路径是继承约束传播与保守分支决策；**`detectCommonPredicatesInOr`** 为**可选、仅观测**规则（告警/轨迹），**从不**做结构上提。  
 - 默认目标是 **稳定与可观测**，不是「智能优化」。  
 
 ---
 
-## 生产环境建议（v0.1.0）
+## 如何选择 level
 
-- **一般生产流量**请使用 **`shape`**；在 **v0.1.0** 中，这是**唯一**建议用于该场景的 level。  
-- `shape` 之上的 **`predicate`、`logical`、`experimental`** 属于**预览 / 不稳定**能力面，宜在**明确接受预览语义**的前提下，用于**离线分析**、**回放测试**、**语义验证**与**定向实验**，不宜作为全量在线请求的默认策略。  
-- 若启用**非 `shape`** 的 level，每次调用都会在 **`meta.warnings`** 中写入一条 **v0.1.0 版本边界说明**。在**非生产**环境（`NODE_ENV !== "production"`）下，还会在进程内对**同一 level 至多输出一次**与之对应的 **`console.warn`**，便于本地开发看到同样提示，又避免重复刷屏。  
+- 仅需结构稳定时，用 **`shape`**。  
+- 需要同字段去重、可建模比较合并、矛盾折叠时，用 **`predicate`**（仅针对已建模算子）。  
+- 需要继承约束传播、保守剪枝与狭窄覆盖消除时，用 **`scope`**（详见 [SPEC.zh-CN.md](SPEC.zh-CN.md) 与 [docs/normalization-matrix.zh-CN.md](docs/normalization-matrix.zh-CN.md)）。**`detectCommonPredicatesInOr`**（开启时）仅观测，不改写结构。  
+
+**行为边界**以 **SPEC**、**normalization-matrix** 与 **`test/contracts/`** 为准，而非仅靠 README 叙述。
 
 ---
 
@@ -71,34 +212,29 @@ console.log(result.meta);
 
 ### `shape`（默认）
 
-**推荐用于线上主路径**；在 **v0.1.0** 中，亦是**唯一**建议用于**一般生产环境**的层级。只做安全结构规范化，例如：
+**推荐默认路径**（风险最小）：只做安全结构规范化，例如：
 
-- flatten logical  
-- remove empty logical  
-- collapse single-child logical  
-- dedupe logical children  
+- 展平复合（`$and` / `$or`）节点  
+- 移除空复合节点  
+- 折叠单子复合节点  
+- 复合子节点去重  
 - canonical ordering  
 
 ### `predicate`
 
-**预览能力**：在 **v0.1.0** 中**不建议**作为一般生产环境的默认选择。在 `shape` 之上增加**保守**谓词整理：
+在 `shape` 之上对**已建模**算子做**保守**谓词整理：
 
 - 同字段谓词去重  
 - 可建模的比较类谓词合并  
 - 明确矛盾收敛为不可满足过滤器  
 - 在 `normalizePredicate` 中，**`$and` 下同名 field 的直接子 `FieldNode` 会先合并**，以便检出诸如 `{ $and: [{ a: 1 }, { a: 2 }] }` 的矛盾  
 
-### `logical`
+### `scope`
 
-**预览能力**：在 **v0.1.0** 中**不建议**作为一般生产环境的默认选择。在 `predicate` 之上：
+在 `predicate` 之上：
 
-- **检测** `$or` 中的公共谓词（默认**只检测**，默认**不上提**）  
-
-### `experimental`
-
-**实验 / 预览层**：在 **v0.1.0** 中**不建议**作为一般生产环境的默认选择。
-
-- 可在规则开启时对 `$or` 做 **hoist** 等实验性变换；**禁止**作为线上全量默认  
+- **继承约束传播**（phase-1 白名单）、**保守分支剪枝**；**覆盖消除**仅在狭窄、已测试场景且策略允许时进行  
+- 可选 **`detectCommonPredicatesInOr`**：仅观测（告警/轨迹）；**不改写**查询结构  
 
 ---
 
@@ -109,11 +245,13 @@ console.log(result.meta);
 | `changed` | 输出相对输入是否变化（基于哈希） |
 | `level` | 实际使用的规范化层级 |
 | `appliedRules` / `skippedRules` | 规则应用轨迹 |
-| `warnings` | 观察选项开启时的非致命告警；此外，只要解析后的 level **不是** `shape`，就会**始终**附带一条 **v0.1.0 边界说明**（**不**受 `observe.collectWarnings` 影响） |
+| `warnings` | `observe.collectWarnings` 为真时的非致命告警（规则说明、检测文案等） |
 | `bailedOut` | 是否触发安全熔断 |
 | `bailoutReason` | 熔断原因 |
 | `beforeHash` / `afterHash` | 前后稳定哈希 |
 | `stats` | 可选的前后树统计（`observe.collectMetrics`） |
+| `predicateTraces` | `observe.collectPredicateTraces` 为真时：每字段 planner / 跳过 / 矛盾等轨迹 |
+| `scopeTrace` | `observe.collectScopeTraces` 为真时：约束抽取拒绝原因与 scope 决策事件 |
 
 ---
 
@@ -140,23 +278,26 @@ console.log(result.meta);
 ## 必须明确的原则
 
 1. 默认是 **`shape`**。  
-2. 在默认 **`shape`** 路径上，API 面向 **v0.1.0** 的**一般生产用途**而设计；更高 level 不在此承诺范围内。  
-3. **`predicate` 及以上**可能改变查询结构，但在已建模算子上追求 **语义等价**。  
-4. **`experimental`** 仅用于实验或离线回放验证。  
-5. **opaque** 节点不会被语义重写。  
-6. 在未熔断时，输出应对相同 options 保持 **幂等**。  
-7. 本库 **不是** MongoDB 的 planner optimizer。  
+2. **`predicate` / `scope`** 可能改变查询结构，但在已建模算子上追求 **语义等价**。  
+3. **opaque** 节点不会被语义重写。  
+4. 在未熔断时，输出应对相同 options 保持 **幂等**。  
+5. 本库 **不是** MongoDB 的 planner optimizer。  
 
 ---
 
 ## 示例场景
 
-- **线上主路径**：`normalizeQuery(query)`（默认 `shape`；**v0.1.0** 约定的生产侧默认路径）  
-- **离线分析 / 回放测试 / 语义验证 / 定向实验**：仅在可接受预览语义，以及非 `shape` 时的 `meta.warnings` 边界说明（与非生产环境下按 level 一次性的 `console.warn`）时，再启用更高 level，例如：  
+**在线主路径** —— 使用默认（`shape`）；在 `v0.2.0` 中仍是最稳妥的生产基线：
+
+```ts
+normalizeQuery(query);
+```
+
+**Predicate 或 Scope** —— 显式传 `level`；请结合 [SPEC.zh-CN.md](SPEC.zh-CN.md) 与契约测试理解“可改写”与“保留”边界：
 
 ```ts
 normalizeQuery(query, { level: "predicate" });
-```  
+```
 
 ---
 
@@ -167,7 +308,7 @@ normalizeQuery(query, options?) => { query, meta }
 resolveNormalizeOptions(options?) => ResolvedNormalizeOptions
 ```
 
-类型：`NormalizeLevel`、`NormalizeOptions`、`NormalizeRules`、`NormalizeSafety`、`NormalizeObserve`、`ResolvedNormalizeOptions`、`NormalizeResult`、`NormalizeStats`。
+类型：`NormalizeLevel`、`NormalizeOptions`、`NormalizeRules`、`NormalizeSafety`、`NormalizeObserve`、`ResolvedNormalizeOptions`、`NormalizeResult`、`NormalizeStats`、`PredicateSafetyPolicy`、`ScopeSafetyPolicy` 及轨迹相关类型（见包导出）。
 
 ---
 
@@ -187,7 +328,6 @@ resolveNormalizeOptions(options?) => ResolvedNormalizeOptions
 
 * `normalizeQuery` 的返回形态与顶层行为
 * `resolveNormalizeOptions`
-* 预览 / 警告边界行为
 * 包导出
 
 **不要**把「某一 level 专属的规范化行为」放在这里。
@@ -202,8 +342,7 @@ resolveNormalizeOptions(options?) => ResolvedNormalizeOptions
 
 * `shape`
 * `predicate`
-* `logical`
-* `experimental`
+* `scope`
 
 每个 level 的测试文件宜聚焦四件事：
 
@@ -236,6 +375,7 @@ resolveNormalizeOptions(options?) => ResolvedNormalizeOptions
 * 各 level 下的幂等
 * 各 level 下的输出不变式
 * 各 level 下的 opaque 子树保留
+* **`predicate` / `scope` 的正式契约**（支持合并、opaque 保留、scope 策略护栏、规则开关）——见 `test/contracts/predicate-scope-stable-contract.test.js`
 
 全 level 套件请配合 `test/helpers/level-contract-runner.js` 使用。
 
@@ -350,6 +490,8 @@ resolveNormalizeOptions(options?) => ResolvedNormalizeOptions
 ### npm 脚本与 property 测试工具链
 
 随机语义测试使用 **`mongodb-memory-server`** 与 **`fast-check`**，在固定文档 schema 与受限算子集合下，对比 normalize 前后真实 `find` 结果（相同 `sort` / `skip` / `limit`，投影 `{ _id: 1 }`），并断言 **`_id` 顺序一致**、返回 **`query` 幂等**；对 opaque 算子仅要求**不崩溃、第二次 normalize 稳定**。生成器见 `test/helpers/arbitraries.js`；**`FC_SEED` / `FC_RUNS` 默认值统一由 `test/helpers/fc-config.js` 管理**（也由 `arbitraries.js` 再导出）。
+
+为**避免在线下载** MongoDB 二进制，可在运行语义测试前设置 **`MONGODB_BINARY`**、**`MONGOD_BINARY`** 或 **`MONGOMS_SYSTEM_BINARY`** 指向本机 `mongod`（见 `test/helpers/mongo-fixture.js`）。
 
 * **`npm run test`**：先 build，再 `test:unit`，再 `test:semantic`。
 * **`npm run test:api`**：仅 `test/api/**/*.test.js`。
