@@ -1,6 +1,6 @@
 {
   "name": "mongo-query-normalizer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Observable, level-based normalizer for MongoDB query objects. Defaults to conservative shape stabilization; optional predicate and scope levels with documented contracts. Predictable output and metadata—not planner optimization.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
