@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 Chinese version: [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md).
 
+## [0.2.1] - 2026-04-02
+
+### Highlights
+
+* Fixed `predicate`-level normalization to correctly merge multiple `$ne` constraints into a single `$nin`.
+* Fixed `predicate`-level normalization to correctly merge multiple `$nin` constraints into a single `$nin` (union of values), preserving conjunction semantics.
+
+### Changed
+
+#### Predicate level: corrected `$ne`/`$nin` merge semantics
+
+* Included `ne.ne` and `nin.nin` merge rules in the default predicate rewrite surface.
+* Updated capability ordering so the merge rules run in the intended sequence.
+
+### Testing
+
+* Added unit and semantic equivalence coverage for `$ne + $ne`, `$nin + $nin`, and mixed `$ne`/`$nin` scenarios.
+
 ## [0.2.0] - 2026-04-01
 
 ### Highlights

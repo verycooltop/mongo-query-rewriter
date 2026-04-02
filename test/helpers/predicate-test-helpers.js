@@ -9,7 +9,7 @@ const {
     extractWarnings,
 } = require("./extract-predicate-observe.js");
 
-const ALLOWED_PREDICATE_CAPABILITIES = ["eq.eq", "eq.ne", "eq.in", "eq.range", "range.range"];
+const ALLOWED_PREDICATE_CAPABILITIES = ["eq.eq", "eq.ne", "ne.ne", "nin.nin", "eq.in", "eq.range", "range.range"];
 
 function normalizePredicateCase(query, options = {}) {
     const mergedOptions = {

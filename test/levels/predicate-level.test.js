@@ -10,6 +10,9 @@ const {
     comparableGtMerge,
     inOverlapMerge,
     literalAndExplicitEq,
+    multipleNeMergeToNin,
+    multipleNinMergeToNin,
+    mixedNeAndNinMergeToNin,
     commonPredicatesInOr,
 } = require("../helpers/level-cases.js");
 
@@ -47,6 +50,21 @@ describe("levels / predicate", () => {
     it("正向能力：字面量与显式 $eq 收敛为单一字段条件", () => {
         const { query } = runAtLevel("predicate", literalAndExplicitEq);
         assert.deepStrictEqual(query, { a: 1 });
+    });
+
+    it("正向能力：同字段多个 $ne 合并为 $nin", () => {
+        const { query } = runAtLevel("predicate", multipleNeMergeToNin);
+        assert.deepStrictEqual(query, { a: { $nin: [1, 2] } });
+    });
+
+    it("正向能力：同字段多个 $nin 合并为 $nin（值并集）", () => {
+        const { query } = runAtLevel("predicate", multipleNinMergeToNin);
+        assert.deepStrictEqual(query, { a: { $nin: [1, 2] } });
+    });
+
+    it("正向能力：$ne 与 $nin 混合时合并为单个 $nin", () => {
+        const { query } = runAtLevel("predicate", mixedNeAndNinMergeToNin);
+        assert.deepStrictEqual(query, { a: { $nin: [2, 1, 3] } });
     });
 
     it("禁止能力：不做 $or 公共谓词改写（与 shape 输出一致）", () => {

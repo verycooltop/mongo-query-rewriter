@@ -4,7 +4,7 @@ import { detectUnsupportedMix } from "../ir/build-field-bundle";
 import type { RelationPlan, SkippedCapability } from "./relation-plan";
 import { isCapabilityCandidate } from "./capability-selector";
 
-const DEFAULT_CAPABILITY_ORDER: string[] = ["eq.eq", "eq.ne", "eq.in", "range.range", "eq.range"];
+const DEFAULT_CAPABILITY_ORDER: string[] = ["eq.eq", "eq.ne", "ne.ne", "nin.nin", "eq.in", "range.range", "eq.range"];
 
 function orderCapabilities(caps: PredicateCapability[]): PredicateCapability[] {
     const byId = new Map(caps.map((c) => [c.id, c] as const));

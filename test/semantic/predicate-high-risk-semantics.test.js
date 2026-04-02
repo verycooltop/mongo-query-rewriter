@@ -68,6 +68,18 @@ describe("semantic / predicate high risk semantics", function () {
         it("$nin + eq", async () => {
             await assertSemanticEquivalent({ $and: [{ a: { $nin: [2] } }, { a: 1 }] });
         });
+
+        it("$ne + $ne", async () => {
+            await assertSemanticEquivalent({ $and: [{ a: { $ne: 1 } }, { a: { $ne: 2 } }] });
+        });
+
+        it("$nin + $nin", async () => {
+            await assertSemanticEquivalent({ $and: [{ a: { $nin: [1] } }, { a: { $nin: [2] } }, { a: { $nin: [2] } }] });
+        });
+
+        it("$ne + $nin + $ne", async () => {
+            await assertSemanticEquivalent({ $and: [{ a: { $ne: 1 } }, { a: { $nin: [2] } }, { a: { $ne: 3 } }] });
+        });
     });
 
     describe("whole-object vs dotted-path", () => {

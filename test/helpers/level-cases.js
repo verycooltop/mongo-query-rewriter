@@ -22,6 +22,16 @@ const inOverlapMerge = { $and: [{ a: { $in: [1, 2, 3] } }, { a: { $in: [2, 3, 4]
 
 const literalAndExplicitEq = { $and: [{ a: 1 }, { a: { $eq: 1 } }] };
 
+const multipleNeMergeToNin = { $and: [{ a: { $ne: 1 } }, { a: { $ne: 2 } }] };
+
+const multipleNinMergeToNin = {
+    $and: [{ a: { $nin: [1] } }, { a: { $nin: [2] } }, { a: { $nin: [2] } }],
+};
+
+const mixedNeAndNinMergeToNin = {
+    $and: [{ a: { $ne: 1 } }, { a: { $nin: [2] } }, { a: { $ne: 3 } }],
+};
+
 const commonPredicatesInOr = {
     $or: [{ $and: [{ a: 1 }, { b: 1 }] }, { $and: [{ a: 1 }, { c: 1 }] }],
 };
@@ -46,6 +56,9 @@ module.exports = {
     comparableGtMerge,
     inOverlapMerge,
     literalAndExplicitEq,
+    multipleNeMergeToNin,
+    multipleNinMergeToNin,
+    mixedNeAndNinMergeToNin,
     commonPredicatesInOr,
     commonPredicatesInOrTriple,
 };
